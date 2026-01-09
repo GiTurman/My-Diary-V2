@@ -3,6 +3,7 @@ from google import genai
 from datetime import datetime
 import pandas as pd
 import os
+import time
 from streamlit_mic_recorder import speech_to_text
 
 # --- კონფიგურაცია ---
@@ -16,9 +17,10 @@ st.set_page_config(page_title="Gemini 3 Smart Diary", layout="centered")
 # --- სესიის ინიციალიზაცია ---
 if "user" not in st.session_state:
     st.session_state["user"] = None
-# ამ ცვლადში შევინახავთ ტექსტს, რომ შეცდომა არ ამოაგდოს
 if "temp_content" not in st.session_state:
     st.session_state["temp_content"] = ""
+if "is_processing_speech" not in st.session_state:
+    st.session_state["is_processing_speech"] = False
 
 # --- ავტორიზაცია ---
 if st.session_state["user"] is None:
@@ -46,29 +48,38 @@ if not os.path.exists(DB_FILE):
 # --- ინტერფეისი ---
 st.subheader("🎤 ისაუბრე ან ჩაწერე")
 
-# 1. ხმოვანი შეყვანა
-t_speech = speech_to_text(language='ka', start_prompt="🎤 ხმის ჩაწერა", key='recorder')
+# ხმოვანი შეყვანა
+t_speech = speech_to_text(
+    language='ka', 
+    start_prompt="🎤 დაიწყე საუბარი", 
+    stop_prompt="🛑 დასრულება",
+    key='recorder'
+)
 
-# თუ ხმა ჩაიწერა, ვაახლებთ დროებით მეხსიერებას
+# ტელეფონისთვის სპეციალური დამუშავება: თუ ხმა მოვიდა, ვაჩვენებთ ლოდინს
 if t_speech:
-    st.session_state["temp_content"] = t_speech
+    with st.spinner("⏳ ხმა მუშავდება, გთხოვთ დაელოდოთ..."):
+        st.session_state["temp_content"] = t_speech
+        time.sleep(1) # მცირე პაუზა ტელეფონის ბრაუზერისთვის
+        st.rerun()
 
-# 2. ტექსტური ველი
-# ვიყენებთ value-ს temp_content-იდან, მაგრამ არ ვაბამთ პირდაპირ key-ს შენახვაზე
+# ტექსტური ველი
 user_text = st.text_area(
     "რა ხდება დღეს?", 
     value=st.session_state["temp_content"],
     height=150,
-    key="diary_widget"
+    key="diary_widget",
+    help="აქ გამოჩნდება თქვენი ნალაპარაკები ტექსტი"
 )
 
-# 3. შენახვის ღილაკი
-if st.button("💾 შენახვა"):
-    # ვიღებთ ტექსტს უშუალოდ ვიჯეტიდან
+# შენახვის ღილაკი
+save_btn = st.button("💾 შენახვა", use_container_width=True)
+
+if save_btn:
     raw_content = st.session_state["diary_widget"]
     
     if raw_content and raw_content.strip():
-        with st.spinner('Gemini 3 ფიქრობს...'):
+        with st.spinner('🤖 Gemini 3 აანალიზებს...'):
             try:
                 prompt = f"""
                 მომხმარებელმა დაწერა: "{raw_content}"
@@ -91,7 +102,7 @@ if st.button("💾 შენახვა"):
                 else:
                     fixed, mood, reply = raw_content, "ნეიტრალური", res
                 
-                # ფაილში შენახვა
+                # შენახვა ფაილში
                 now = datetime.now()
                 df = pd.read_csv(DB_FILE, sep='\t')
                 new_row = pd.DataFrame([[
@@ -104,24 +115,26 @@ if st.button("💾 შენახვა"):
                 
                 pd.concat([df, new_row], ignore_index=True).to_csv(DB_FILE, sep='\t', index=False)
                 
-                # --- გამოსავალი: ვასუფთავებთ temp_content-ს და ვიყენებთ rerun-ს ---
+                # გასუფთავება
                 st.session_state["temp_content"] = ""
-                st.success("ჩანაწერი შენახულია!")
+                st.success("✅ ჩანაწერი შენახულია!")
+                time.sleep(1)
                 st.rerun()
 
             except Exception as e:
-                st.error(f"AI შეცდომა: {str(e)}")
+                st.error(f"❌ AI შეცდომა: {str(e)}")
     else:
-        st.warning("გთხოვთ, ჯერ შეიყვანოთ ტექსტი.")
+        st.warning("⚠️ გთხოვთ, ჯერ შეიყვანოთ ტექსტი ან ჩაწეროთ ხმა.")
 
 # --- ისტორია ---
 st.divider()
 try:
     df_hist = pd.read_csv(DB_FILE, sep='\t')
     if not df_hist.empty:
+        st.write("📚 **ბოლო ჩანაწერები:**")
         for i, row in df_hist.sort_values(by=["თარიღი", "საათი"], ascending=False).iterrows():
             with st.expander(f"🗓️ {row['თარიღი']} | {row['საათი']} | {row['განწყობა']}"):
-                st.write(f"✍️ **გასწორებული:** {row['ჩანაწერი']}")
-                st.info(f"🤖 **AI:** {row['AI_პასუხი']}")
+                st.write(f"✍️ {row['ჩანაწერი']}")
+                st.info(f"🤖 {row['AI_პასუხი']}")
 except Exception:
-    st.write("ჩანაწერები ჯერ არ არის.")
+    st.write("📭 ჩანაწერები ჯერ არ არის.")
