@@ -13,13 +13,10 @@ USERS = {"Giorgi": "1234", "Baiko": "1234", "Ani": "1234", "admin": "0000"}
 
 st.set_page_config(page_title="Gemini 3 Smart Diary", layout="centered")
 
-# --- სესიის ინიციალიზაცია (ტელეფონისთვის აუცილებელია) ---
+# --- ავტორიზაცია ---
 if "user" not in st.session_state:
     st.session_state["user"] = None
-if "temp_text" not in st.session_state:
-    st.session_state["temp_text"] = ""
 
-# --- ავტორიზაცია ---
 if st.session_state["user"] is None:
     st.title("🔐 შესვლა")
     u = st.text_input("მომხმარებელი:")
@@ -28,8 +25,6 @@ if st.session_state["user"] is None:
         if u in USERS and USERS[u] == p:
             st.session_state["user"] = u
             st.rerun()
-        else:
-            st.error("არასწორი მონაცემები!")
     st.stop()
 
 current_user = st.session_state["user"]
@@ -45,61 +40,50 @@ if not os.path.exists(DB_FILE):
 # --- ინტერფეისი ---
 st.subheader("🎤 ისაუბრე ან ჩაწერე")
 
-# ხმოვანი ჩანაწერი
-text_from_speech = speech_to_text(language='ka', start_prompt="🎤 ხმოვანი შეყვანა", key='recorder')
+# 1. ხმოვანი შეყვანა
+text_from_speech = speech_to_text(language='ka', start_prompt="🎤 ხმოვანი ჩაწერა", key='recorder')
 
-# თუ ხმოვანი შეყვანა მოხდა, შევინახოთ სესიაში
-if text_from_speech:
-    st.session_state["temp_text"] = text_from_speech
-
-# ტექსტური ველი (ტელეფონზე სტაბილურობისთვის ვიყენებთ on_change-ს)
-def update_text():
-    st.session_state["temp_text"] = st.session_state["input_field"]
-
+# 2. ტექსტური ველი (უშუალო Key-ს გამოყენებით)
+# თუ ხმამ რამე ჩაწერა, ის ხდება საწყისი მნიშვნელობა
 user_input = st.text_area(
     "რა ხდება დღეს?", 
-    value=st.session_state["temp_text"], 
+    value=text_from_speech if text_from_speech else "", 
     height=150, 
-    key="input_field",
-    on_change=update_text
+    key="diary_input"
 )
 
+# 3. შენახვის ღილაკი
 if st.button("💾 შენახვა"):
-    final_text = st.session_state["temp_text"]
-    if final_text:
+    # ვიღებთ ტექსტს პირდაპირ ველის Key-დან
+    content_to_save = st.session_state.diary_input
+    
+    if content_to_save:
         with st.spinner('Gemini 3 ფიქრობს...'):
             try:
                 prompt = f"""
-                მომხმარებელმა დაწერა: "{final_text}"
+                მომხმარებელმა დაწერა: "{content_to_save}"
                 დავალება:
                 1. გაასწორე ტექსტი: დაამატე მძიმეები და წერტილები ქართულად.
                 2. თუ არის კითხვა, უპასუხე დეტალურად.
-                3. პასუხი დააბრუნე ზუსტად ამ ფორმატით:
-                FIXED: [ტექსტი]
-                MOOD: [განწყობა]
-                REPLY: [პასუხი]
+                3. პასუხი დააბრუნე ფორმატით: FIXED: [ტექსტი] | MOOD: [განწყობა] | REPLY: [პასუხი]
                 """
                 
                 response = client.models.generate_content(
                     model="gemini-3-flash-preview",
                     contents=prompt
                 )
-                
                 res = response.text
                 
-                fixed = final_text
-                mood = "ნეიტრალური"
-                reply = res
-
+                # ინფორმაციის გაფილტვრა
                 if "FIXED:" in res and "MOOD:" in res and "REPLY:" in res:
-                    parts = res.split("FIXED:")[1].split("MOOD:")
-                    fixed = parts[0].strip()
-                    parts2 = parts[1].split("REPLY:")
-                    mood = parts2[0].strip()
-                    reply = parts2[1].strip()
+                    fixed = res.split("FIXED:")[1].split("| MOOD:")[0].strip()
+                    mood = res.split("MOOD:")[1].split("| REPLY:")[0].strip()
+                    reply = res.split("| REPLY:")[1].strip()
+                else:
+                    fixed, mood, reply = content_to_save, "ნეიტრალური", res
                 
             except Exception as e:
-                fixed, mood, reply = final_text, "შეცდომა", f"შეცდომა: {str(e)}"
+                fixed, mood, reply = content_to_save, "შეცდომა", f"შეცდომა: {str(e)}"
 
             # ჩაწერა ფაილში
             now = datetime.now()
@@ -114,9 +98,8 @@ if st.button("💾 შენახვა"):
             
             pd.concat([df, new_row], ignore_index=True).to_csv(DB_FILE, sep='\t', index=False)
             
-            # მნიშვნელოვანი: ვასუფთავებთ სესიას და ველს
-            st.session_state["temp_text"] = ""
             st.success("წარმატებით შეინახა!")
+            # მცირე პაუზა და გადატვირთვა ველის გასასუფთავებლად
             st.rerun()
     else:
         st.warning("გთხოვთ, ჯერ შეიყვანოთ ტექსტი.")
