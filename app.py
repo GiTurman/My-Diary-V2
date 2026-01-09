@@ -9,14 +9,11 @@ from streamlit_mic_recorder import speech_to_text
 API_KEY = "AIzaSyAgZjH7-PPa8zcHfU2d5oSaiHFEKbkyBG8"
 client = genai.Client(api_key=API_KEY)
 
-USERS = {"Giorgi": "1234", "Baiko": "1234",  "Ani": "1234", "admin": "0000"}
+USERS = {"Giorgi": "1234", "Baiko": "1234", "Ani": "1234", "admin": "0000"}
 
 st.set_page_config(page_title="Gemini 3 Smart Diary", layout="centered")
 
-# --- სესიის ინიციალიზაცია ველის გასასუფთავებლად ---
-if "user_input_text" not in st.session_state:
-    st.session_state["user_input_text"] = ""
-
+# --- სესიის ინიციალიზაცია ---
 if "user" not in st.session_state:
     st.session_state["user"] = None
 
@@ -46,17 +43,15 @@ if not os.path.exists(DB_FILE):
 # --- ინტერფეისი ---
 st.subheader("🎤 ისაუბრე ან ჩაწერე")
 
-# ხმოვანი ჩანაწერი
+# ხმოვანი ჩანაწერი (ავტომატურად ავსებს ველს)
 text_from_speech = speech_to_text(language='ka', start_prompt="ჩაწერა (ისაუბრე)", key='recorder')
 
-# თუ ხმოვანი შეყვანა მოხდა, განვაახლოთ სესიის სტეიტი
-if text_from_speech:
-    st.session_state["user_input_text"] = text_from_speech
+# ფორმა, რომელიც უზრუნველყოფს ველის გასუფთავებას (clear_on_submit=True)
+with st.form(key='diary_form', clear_on_submit=True):
+    user_input = st.text_area("ტექსტი:", value=text_from_speech if text_from_speech else "", height=150)
+    submit_button = st.form_submit_button(label='💾 შენახვა და Gemini 3 ანალიზი')
 
-# ტექსტური ველი, რომელიც დაკავშირებულია სესიის სტეიტთან
-user_input = st.text_area("ტექსტი:", value=st.session_state["user_input_text"], height=100, key="main_text_area")
-
-if st.button("💾 შენახვა და Gemini 3 ანალიზი"):
+if submit_button:
     if user_input:
         with st.spinner('Gemini 3 ფიქრობს...'):
             try:
@@ -78,6 +73,7 @@ if st.button("💾 შენახვა და Gemini 3 ანალიზი")
                 
                 res = response.text
                 
+                # ინფორმაციის ამოღება
                 fixed = user_input
                 mood = "ნეიტრალური"
                 reply = res
@@ -95,22 +91,29 @@ if st.button("💾 შენახვა და Gemini 3 ანალიზი")
             # შენახვა
             now = datetime.now()
             df = pd.read_csv(DB_FILE, sep='\t')
-            new_row = pd.DataFrame([[now.strftime("%Y-%m-%d"), now.strftime("%H:%M"), fixed, mood, reply]], 
-                                   columns=COLUMNS)
-            pd.concat([df, new_row], ignore_index=True).to_csv(DB_FILE, sep='\t', index=False)
+            new_row = pd.DataFrame([[
+                now.strftime("%Y-%m-%d"), 
+                now.strftime("%H:%M"), 
+                fixed, 
+                mood, 
+                reply
+            ]], columns=COLUMNS)
             
-            # --- მნიშვნელოვანი: ველის გასუფთავება ---
-            st.session_state["user_input_text"] = "" 
-            st.success("მონაცემები დამუშავდა და ველი გასუფთავდა!")
+            pd.concat([df, new_row], ignore_index=True).to_csv(DB_FILE, sep='\t', index=False)
+            st.success("მონაცემები წარმატებით შეინახა!")
             st.rerun()
+    else:
+        st.warning("გთხოვთ, ჯერ შეიყვანოთ ტექსტი.")
 
 # --- ისტორია ---
 st.divider()
 try:
     df_hist = pd.read_csv(DB_FILE, sep='\t')
     if not df_hist.empty:
+        st.subheader("📚 ჩანაწერების არქივი")
+        # უახლესი ჩანაწერები ზემოთ
         for i, row in df_hist.sort_values(by=["თარიღი", "საათი"], ascending=False).iterrows():
-            with st.expander(f"🗓️ {row['თარიღი']} | {row['განწყობა']}"):
+            with st.expander(f"🗓️ {row['თარიღი']} | {row['საათი']} | {row['განწყობა']}"):
                 st.write(f"✍️ **გასწორებული:** {row['ჩანაწერი']}")
                 st.info(f"🤖 **Gemini 3:** {row['AI_პასუხი']}")
 except:
