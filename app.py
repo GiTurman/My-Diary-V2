@@ -13,9 +13,11 @@ USERS = {"Giorgi": "1234", "Baiko": "1234", "Ani": "1234", "admin": "0000"}
 
 st.set_page_config(page_title="Gemini 3 Smart Diary", layout="centered")
 
-# --- სესიის ინიციალიზაცია ---
+# --- სესიის ინიციალიზაცია (ტელეფონისთვის აუცილებელია) ---
 if "user" not in st.session_state:
     st.session_state["user"] = None
+if "temp_text" not in st.session_state:
+    st.session_state["temp_text"] = ""
 
 # --- ავტორიზაცია ---
 if st.session_state["user"] is None:
@@ -31,7 +33,7 @@ if st.session_state["user"] is None:
     st.stop()
 
 current_user = st.session_state["user"]
-st.title(f"🚀 {current_user}-ს დღიური (Gemini 3)")
+st.title(f"🚀 {current_user}-ს დღიური")
 
 # --- მონაცემთა ბაზა ---
 DB_FILE = f"diary_{current_user}.csv"
@@ -43,20 +45,32 @@ if not os.path.exists(DB_FILE):
 # --- ინტერფეისი ---
 st.subheader("🎤 ისაუბრე ან ჩაწერე")
 
-# ხმოვანი ჩანაწერი (ავტომატურად ავსებს ველს)
-text_from_speech = speech_to_text(language='ka', start_prompt="ჩაწერა (ისაუბრე)", key='recorder')
+# ხმოვანი ჩანაწერი
+text_from_speech = speech_to_text(language='ka', start_prompt="🎤 ხმოვანი შეყვანა", key='recorder')
 
-# ფორმა, რომელიც უზრუნველყოფს ველის გასუფთავებას (clear_on_submit=True)
-with st.form(key='diary_form', clear_on_submit=True):
-    user_input = st.text_area("ტექსტი:", value=text_from_speech if text_from_speech else "", height=150)
-    submit_button = st.form_submit_button(label='💾 შენახვა და Gemini 3 ანალიზი')
+# თუ ხმოვანი შეყვანა მოხდა, შევინახოთ სესიაში
+if text_from_speech:
+    st.session_state["temp_text"] = text_from_speech
 
-if submit_button:
-    if user_input:
+# ტექსტური ველი (ტელეფონზე სტაბილურობისთვის ვიყენებთ on_change-ს)
+def update_text():
+    st.session_state["temp_text"] = st.session_state["input_field"]
+
+user_input = st.text_area(
+    "რა ხდება დღეს?", 
+    value=st.session_state["temp_text"], 
+    height=150, 
+    key="input_field",
+    on_change=update_text
+)
+
+if st.button("💾 შენახვა"):
+    final_text = st.session_state["temp_text"]
+    if final_text:
         with st.spinner('Gemini 3 ფიქრობს...'):
             try:
                 prompt = f"""
-                მომხმარებელმა დაწერა: "{user_input}"
+                მომხმარებელმა დაწერა: "{final_text}"
                 დავალება:
                 1. გაასწორე ტექსტი: დაამატე მძიმეები და წერტილები ქართულად.
                 2. თუ არის კითხვა, უპასუხე დეტალურად.
@@ -73,8 +87,7 @@ if submit_button:
                 
                 res = response.text
                 
-                # ინფორმაციის ამოღება
-                fixed = user_input
+                fixed = final_text
                 mood = "ნეიტრალური"
                 reply = res
 
@@ -86,9 +99,9 @@ if submit_button:
                     reply = parts2[1].strip()
                 
             except Exception as e:
-                fixed, mood, reply = user_input, "შეცდომა", f"Gemini 3-ის შეცდომა: {str(e)}"
+                fixed, mood, reply = final_text, "შეცდომა", f"შეცდომა: {str(e)}"
 
-            # შენახვა
+            # ჩაწერა ფაილში
             now = datetime.now()
             df = pd.read_csv(DB_FILE, sep='\t')
             new_row = pd.DataFrame([[
@@ -100,7 +113,10 @@ if submit_button:
             ]], columns=COLUMNS)
             
             pd.concat([df, new_row], ignore_index=True).to_csv(DB_FILE, sep='\t', index=False)
-            st.success("მონაცემები წარმატებით შეინახა!")
+            
+            # მნიშვნელოვანი: ვასუფთავებთ სესიას და ველს
+            st.session_state["temp_text"] = ""
+            st.success("წარმატებით შეინახა!")
             st.rerun()
     else:
         st.warning("გთხოვთ, ჯერ შეიყვანოთ ტექსტი.")
@@ -110,11 +126,9 @@ st.divider()
 try:
     df_hist = pd.read_csv(DB_FILE, sep='\t')
     if not df_hist.empty:
-        st.subheader("📚 ჩანაწერების არქივი")
-        # უახლესი ჩანაწერები ზემოთ
         for i, row in df_hist.sort_values(by=["თარიღი", "საათი"], ascending=False).iterrows():
             with st.expander(f"🗓️ {row['თარიღი']} | {row['საათი']} | {row['განწყობა']}"):
                 st.write(f"✍️ **გასწორებული:** {row['ჩანაწერი']}")
-                st.info(f"🤖 **Gemini 3:** {row['AI_პასუხი']}")
+                st.info(f"🤖 **AI:** {row['AI_პასუხი']}")
 except:
     st.write("ჩანაწერები ჯერ არ არის.")
