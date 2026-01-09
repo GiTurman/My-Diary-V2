@@ -16,8 +16,9 @@ st.set_page_config(page_title="Gemini 3 Smart Diary", layout="centered")
 # --- სესიის ინიციალიზაცია ---
 if "user" not in st.session_state:
     st.session_state["user"] = None
-if "diary_input_field" not in st.session_state:
-    st.session_state["diary_input_field"] = ""
+# ამ ცვლადში შევინახავთ ტექსტს, რომ შეცდომა არ ამოაგდოს
+if "temp_content" not in st.session_state:
+    st.session_state["temp_content"] = ""
 
 # --- ავტორიზაცია ---
 if st.session_state["user"] is None:
@@ -46,31 +47,28 @@ if not os.path.exists(DB_FILE):
 st.subheader("🎤 ისაუბრე ან ჩაწერე")
 
 # 1. ხმოვანი შეყვანა
-# ვიყენებთ callback-ს, რომ ხმის დასრულებისთანავე ტექსტი გადავიდეს ველში
-text_from_speech = speech_to_text(
-    language='ka', 
-    start_prompt="🎤 ხმის ჩაწერა", 
-    key='recorder'
-)
+t_speech = speech_to_text(language='ka', start_prompt="🎤 ხმის ჩაწერა", key='recorder')
 
-# თუ ხმოვანი შეყვანა მოხდა, პირდაპირ ვაახლებთ სესიის სტეიტს
-if text_from_speech:
-    st.session_state.diary_input_field = text_from_speech
+# თუ ხმა ჩაიწერა, ვაახლებთ დროებით მეხსიერებას
+if t_speech:
+    st.session_state["temp_content"] = t_speech
 
-# 2. ტექსტური ველი (უშუალოდ დაკავშირებული session_state-თან)
+# 2. ტექსტური ველი
+# ვიყენებთ value-ს temp_content-იდან, მაგრამ არ ვაბამთ პირდაპირ key-ს შენახვაზე
 user_text = st.text_area(
     "რა ხდება დღეს?", 
-    height=150, 
-    key="diary_input_field" # ეს ავტომატურად მართავს st.session_state.diary_input_field-ს
+    value=st.session_state["temp_content"],
+    height=150,
+    key="diary_widget"
 )
 
 # 3. შენახვის ღილაკი
 if st.button("💾 შენახვა"):
-    # ვიღებთ ტექსტს პირდაპირ სესიიდან
-    raw_content = st.session_state.diary_input_field
+    # ვიღებთ ტექსტს უშუალოდ ვიჯეტიდან
+    raw_content = st.session_state["diary_widget"]
     
     if raw_content and raw_content.strip():
-        with st.spinner('Gemini 3 ამუშავებს...'):
+        with st.spinner('Gemini 3 ფიქრობს...'):
             try:
                 prompt = f"""
                 მომხმარებელმა დაწერა: "{raw_content}"
@@ -93,26 +91,26 @@ if st.button("💾 შენახვა"):
                 else:
                     fixed, mood, reply = raw_content, "ნეიტრალური", res
                 
-            except Exception as e:
-                fixed, mood, reply = raw_content, "შეცდომა", f"AI შეცდომა: {str(e)}"
+                # ფაილში შენახვა
+                now = datetime.now()
+                df = pd.read_csv(DB_FILE, sep='\t')
+                new_row = pd.DataFrame([[
+                    now.strftime("%Y-%m-%d"), 
+                    now.strftime("%H:%M"), 
+                    fixed, 
+                    mood, 
+                    reply
+                ]], columns=COLUMNS)
+                
+                pd.concat([df, new_row], ignore_index=True).to_csv(DB_FILE, sep='\t', index=False)
+                
+                # --- გამოსავალი: ვასუფთავებთ temp_content-ს და ვიყენებთ rerun-ს ---
+                st.session_state["temp_content"] = ""
+                st.success("ჩანაწერი შენახულია!")
+                st.rerun()
 
-            # ფაილში შენახვა
-            now = datetime.now()
-            df = pd.read_csv(DB_FILE, sep='\t')
-            new_row = pd.DataFrame([[
-                now.strftime("%Y-%m-%d"), 
-                now.strftime("%H:%M"), 
-                fixed, 
-                mood, 
-                reply
-            ]], columns=COLUMNS)
-            
-            pd.concat([df, new_row], ignore_index=True).to_csv(DB_FILE, sep='\t', index=False)
-            
-            # ვასუფთავებთ ველს შენახვის შემდეგ
-            st.session_state.diary_input_field = ""
-            st.success("ჩანაწერი შენახულია!")
-            st.rerun()
+            except Exception as e:
+                st.error(f"AI შეცდომა: {str(e)}")
     else:
         st.warning("გთხოვთ, ჯერ შეიყვანოთ ტექსტი.")
 
