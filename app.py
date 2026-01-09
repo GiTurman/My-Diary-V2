@@ -6,7 +6,7 @@ import os
 from streamlit_mic_recorder import speech_to_text
 
 # --- კონფიგურაცია ---
-API_KEY = "AIzaSyDrFdRWcnVeyZ04Y5IWSoiMpIVU2RFXxDk"
+API_KEY = "AIzaSyAgZjH7-PPa8zcHfU2d5oSaiHFEKbkyBG8"
 genai.configure(api_key=API_KEY)
 
 USERS = {"giorgi": "1234","Baiko": "1234", "Ani": "1234", "admin": "0000"}
