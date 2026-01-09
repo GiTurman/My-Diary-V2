@@ -5,6 +5,11 @@ import pandas as pd
 import os
 from streamlit_mic_recorder import speech_to_text
 
+# --- iPhone 15 Pro Audio Fix ---
+# ეს ხაზი ეხმარება ახალ iOS-ს ბუფერის გასუფთავებაში
+if "audio_initialized" not in st.session_state:
+    st.session_state["audio_initialized"] = True
+
 # ================== კონფიგურაცია ==================
 API_KEY = os.getenv("GEMINI_API_KEY")
 if not API_KEY:
