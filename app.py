@@ -3,7 +3,6 @@ from google import genai
 from datetime import datetime
 import pandas as pd
 import os
-import time
 from streamlit_mic_recorder import speech_to_text
 
 # --- კონფიგურაცია ---
@@ -14,15 +13,10 @@ USERS = {"Giorgi": "1234", "Baiko": "1234", "Ani": "1234", "admin": "0000"}
 
 st.set_page_config(page_title="Gemini 3 Smart Diary", layout="centered")
 
-# --- სესიის ინიციალიზაცია ---
+# --- ავტორიზაცია ---
 if "user" not in st.session_state:
     st.session_state["user"] = None
-if "temp_content" not in st.session_state:
-    st.session_state["temp_content"] = ""
-if "is_processing_speech" not in st.session_state:
-    st.session_state["is_processing_speech"] = False
 
-# --- ავტორიზაცია ---
 if st.session_state["user"] is None:
     st.title("🔐 შესვლა")
     u = st.text_input("მომხმარებელი:", key="login_user")
@@ -31,8 +25,6 @@ if st.session_state["user"] is None:
         if u in USERS and USERS[u] == p:
             st.session_state["user"] = u
             st.rerun()
-        else:
-            st.error("არასწორი მონაცემები!")
     st.stop()
 
 current_user = st.session_state["user"]
@@ -46,9 +38,9 @@ if not os.path.exists(DB_FILE):
     pd.DataFrame(columns=COLUMNS).to_csv(DB_FILE, sep='\t', index=False)
 
 # --- ინტერფეისი ---
-st.subheader("🎤 ისაუბრე ან ჩაწერე")
+st.subheader("🎤 ჩაწერა")
 
-# ხმოვანი შეყვანა
+# 1. ხმოვანი შეყვანა - პირდაპირ ცვლადში, ყოველგვარი rerun-ის გარეშე
 t_speech = speech_to_text(
     language='ka', 
     start_prompt="🎤 დაიწყე საუბარი", 
@@ -56,33 +48,25 @@ t_speech = speech_to_text(
     key='recorder'
 )
 
-# ტელეფონისთვის სპეციალური დამუშავება: თუ ხმა მოვიდა, ვაჩვენებთ ლოდინს
-if t_speech:
-    with st.spinner("⏳ ხმა მუშავდება, გთხოვთ დაელოდოთ..."):
-        st.session_state["temp_content"] = t_speech
-        time.sleep(1) # მცირე პაუზა ტელეფონის ბრაუზერისთვის
-        st.rerun()
-
-# ტექსტური ველი
+# 2. ტექსტური ველი
+# თუ ხმა ჩაიწერა, ის გამოჩნდება აქ. თუ არა, ველი ცარიელია.
 user_text = st.text_area(
     "რა ხდება დღეს?", 
-    value=st.session_state["temp_content"],
+    value=t_speech if t_speech else "",
     height=150,
-    key="diary_widget",
-    help="აქ გამოჩნდება თქვენი ნალაპარაკები ტექსტი"
+    key="diary_input"
 )
 
-# შენახვის ღილაკი
-save_btn = st.button("💾 შენახვა", use_container_width=True)
-
-if save_btn:
-    raw_content = st.session_state["diary_widget"]
+# 3. შენახვის ღილაკი
+if st.button("💾 შენახვა", use_container_width=True):
+    # ვიღებთ მნიშვნელობას პირდაპირ ვიჯეტიდან
+    content_to_save = st.session_state.diary_input
     
-    if raw_content and raw_content.strip():
-        with st.spinner('🤖 Gemini 3 აანალიზებს...'):
+    if content_to_save and content_to_save.strip():
+        with st.spinner('🤖 Gemini 3 ფიქრობს...'):
             try:
                 prompt = f"""
-                მომხმარებელმა დაწერა: "{raw_content}"
+                მომხმარებელმა დაწერა: "{content_to_save}"
                 დავალება:
                 1. გაასწორე ტექსტი: დაამატე მძიმეები და წერტილები ქართულად.
                 2. თუ არის კითხვა, უპასუხე დეტალურად.
@@ -95,14 +79,15 @@ if save_btn:
                 )
                 res = response.text
                 
+                # ინფორმაციის დამუშავება
                 if "FIXED:" in res and "MOOD:" in res and "REPLY:" in res:
                     fixed = res.split("FIXED:")[1].split("| MOOD:")[0].strip()
                     mood = res.split("MOOD:")[1].split("| REPLY:")[0].strip()
                     reply = res.split("| REPLY:")[1].strip()
                 else:
-                    fixed, mood, reply = raw_content, "ნეიტრალური", res
+                    fixed, mood, reply = content_to_save, "ნეიტრალური", res
                 
-                # შენახვა ფაილში
+                # შენახვა
                 now = datetime.now()
                 df = pd.read_csv(DB_FILE, sep='\t')
                 new_row = pd.DataFrame([[
@@ -115,26 +100,23 @@ if save_btn:
                 
                 pd.concat([df, new_row], ignore_index=True).to_csv(DB_FILE, sep='\t', index=False)
                 
-                # გასუფთავება
-                st.session_state["temp_content"] = ""
-                st.success("✅ ჩანაწერი შენახულია!")
-                time.sleep(1)
+                st.success("✅ შენახულია!")
+                # აქ მხოლოდ წარმატების შემდეგ ვაკეთებთ rerun-ს, რომ ისტორია განახლდეს
                 st.rerun()
 
             except Exception as e:
-                st.error(f"❌ AI შეცდომა: {str(e)}")
+                st.error(f"❌ შეცდომა: {str(e)}")
     else:
-        st.warning("⚠️ გთხოვთ, ჯერ შეიყვანოთ ტექსტი ან ჩაწეროთ ხმა.")
+        st.warning("⚠️ გთხოვთ, ჯერ შეიყვანოთ ტექსტი.")
 
 # --- ისტორია ---
 st.divider()
 try:
     df_hist = pd.read_csv(DB_FILE, sep='\t')
     if not df_hist.empty:
-        st.write("📚 **ბოლო ჩანაწერები:**")
         for i, row in df_hist.sort_values(by=["თარიღი", "საათი"], ascending=False).iterrows():
             with st.expander(f"🗓️ {row['თარიღი']} | {row['საათი']} | {row['განწყობა']}"):
                 st.write(f"✍️ {row['ჩანაწერი']}")
                 st.info(f"🤖 {row['AI_პასუხი']}")
 except Exception:
-    st.write("📭 ჩანაწერები ჯერ არ არის.")
+    pass
