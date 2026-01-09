@@ -4,15 +4,13 @@ from datetime import datetime
 import pandas as pd
 import os
 import time
+import pytz # დროის სარტყელისთვის
 from streamlit_mic_recorder import speech_to_text
 
-# --- მნიშვნელოვანი ცვლილება ---
-# აქ ჩასვი შენი ახალი გასაღები
+# ================== კონფიგურაცია ==================
+# შენი ახალი API გასაღები
 API_KEY = "AIzaSyAkxNajc8Z1XcoFlYGYg3SzcyMor5l6AOw" 
 client = genai.Client(api_key=API_KEY)
-
-# ... დანარჩენი კოდი (ის რაც ბოლოს მოგწერე) ...
-
 
 USERS = {
     "Giorgi": "1234",
@@ -128,7 +126,10 @@ REPLY: ...
                 mood = "ნეიტრალური"
                 reply = res
 
-            now = datetime.now()
+            # --- დროის გასწორება თბილისზე ---
+            tbilisi_tz = pytz.timezone('Asia/Tbilisi')
+            now = datetime.now(tbilisi_tz)
+            
             df = pd.read_csv(DB_FILE, sep="\t")
 
             new_row = pd.DataFrame([[
@@ -145,6 +146,7 @@ REPLY: ...
 
             st.session_state.input_text = ""
             st.success("✅ ჩანაწერი შენახულია")
+            time.sleep(1)
             st.rerun()
 
         except Exception as e:
@@ -160,6 +162,7 @@ try:
     if history.empty:
         st.info("ჯერ ჩანაწერები არ არის")
     else:
+        # ისტორიის გამოჩენა კლებადობით (ბოლო ჩანაწერი თავში)
         for _, row in history.sort_values(
             by=["თარიღი", "საათი"], ascending=False
         ).iterrows():
