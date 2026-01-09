@@ -9,14 +9,18 @@ from streamlit_mic_recorder import speech_to_text
 API_KEY = "AIzaSyAgZjH7-PPa8zcHfU2d5oSaiHFEKbkyBG8"
 client = genai.Client(api_key=API_KEY)
 
-USERS = {"giorgi": "1234", "admin": "0000"}
+USERS = {"Giorgi": "1234", "Baiko": "1234",  "Ani": "1234", "admin": "0000"}
 
 st.set_page_config(page_title="Gemini 3 Smart Diary", layout="centered")
 
-# --- ავტორიზაცია ---
+# --- სესიის ინიციალიზაცია ველის გასასუფთავებლად ---
+if "user_input_text" not in st.session_state:
+    st.session_state["user_input_text"] = ""
+
 if "user" not in st.session_state:
     st.session_state["user"] = None
 
+# --- ავტორიზაცია ---
 if st.session_state["user"] is None:
     st.title("🔐 შესვლა")
     u = st.text_input("მომხმარებელი:")
@@ -41,8 +45,16 @@ if not os.path.exists(DB_FILE):
 
 # --- ინტერფეისი ---
 st.subheader("🎤 ისაუბრე ან ჩაწერე")
+
+# ხმოვანი ჩანაწერი
 text_from_speech = speech_to_text(language='ka', start_prompt="ჩაწერა (ისაუბრე)", key='recorder')
-user_input = st.text_area("ტექსტი:", value=text_from_speech if text_from_speech else "", height=100)
+
+# თუ ხმოვანი შეყვანა მოხდა, განვაახლოთ სესიის სტეიტი
+if text_from_speech:
+    st.session_state["user_input_text"] = text_from_speech
+
+# ტექსტური ველი, რომელიც დაკავშირებულია სესიის სტეიტთან
+user_input = st.text_area("ტექსტი:", value=st.session_state["user_input_text"], height=100, key="main_text_area")
 
 if st.button("💾 შენახვა და Gemini 3 ანალიზი"):
     if user_input:
@@ -66,7 +78,6 @@ if st.button("💾 შენახვა და Gemini 3 ანალიზი")
                 
                 res = response.text
                 
-                # ინფორმაციის ამოღება უსაფრთხოდ
                 fixed = user_input
                 mood = "ნეიტრალური"
                 reply = res
@@ -87,7 +98,10 @@ if st.button("💾 შენახვა და Gemini 3 ანალიზი")
             new_row = pd.DataFrame([[now.strftime("%Y-%m-%d"), now.strftime("%H:%M"), fixed, mood, reply]], 
                                    columns=COLUMNS)
             pd.concat([df, new_row], ignore_index=True).to_csv(DB_FILE, sep='\t', index=False)
-            st.success("მონაცემები დამუშავდა!")
+            
+            # --- მნიშვნელოვანი: ველის გასუფთავება ---
+            st.session_state["user_input_text"] = "" 
+            st.success("მონაცემები დამუშავდა და ველი გასუფთავდა!")
             st.rerun()
 
 # --- ისტორია ---
