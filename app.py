@@ -3,19 +3,16 @@ from google import genai
 from datetime import datetime
 import pandas as pd
 import os
+import time
 from streamlit_mic_recorder import speech_to_text
 
-# --- iPhone 15 Pro Audio Fix ---
-# ეს ხაზი ეხმარება ახალ iOS-ს ბუფერის გასუფთავებაში
-if "audio_initialized" not in st.session_state:
-    st.session_state["audio_initialized"] = True
-
-# ================== კონფიგურაცია ==================
-API_KEY = os.getenv("GEMINI_API_KEY")
-if not API_KEY:
-    API_KEY = "AIzaSyAgZjH7-PPa8zcHfU2d5oSaiHFEKbkyBG8"
-
+# --- მნიშვნელოვანი ცვლილება ---
+# აქ ჩასვი შენი ახალი გასაღები
+API_KEY = "AIzaSyAkxNajc8Z1XcoFlYGYg3SzcyMor5l6AOw" 
 client = genai.Client(api_key=API_KEY)
+
+# ... დანარჩენი კოდი (ის რაც ბოლოს მოგწერე) ...
+
 
 USERS = {
     "Giorgi": "1234",
